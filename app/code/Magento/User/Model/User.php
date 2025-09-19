@@ -565,6 +565,10 @@ class User extends AbstractModel implements StorageInterface, UserInterface
     {
         return $this->getFirstName() . $separator . $this->getLastName();
     }
+    public function getId()
+    {
+        return (string)parent::getId();
+    }
 
     /**
      * Get user ACL role

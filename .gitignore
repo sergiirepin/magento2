@@ -4,6 +4,7 @@
 /.project
 /.settings
 /.vscode
+/.ddev
 atlassian*
 /nbproject
 /robots.txt

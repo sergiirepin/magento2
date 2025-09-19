@@ -32,6 +32,7 @@ use Magento\Framework\Stdlib\DateTime;
 use Magento\Framework\Stdlib\StringUtils;
 use Zend_Db_Adapter_Exception;
 use Zend_Db_Statement_Exception;
+use Zend_Db_Adapter_Pdo_Mysql as AdapterPdoMysql;
 use Magento\Framework\Setup\Declaration\Schema\Dto\Factories\Table as DtoFactoriesTable;
 
 // @codingStandardsIgnoreStart
@@ -46,7 +47,7 @@ use Magento\Framework\Setup\Declaration\Schema\Dto\Factories\Table as DtoFactori
  * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
  * @since 100.0.2
  */
-class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, ResetAfterRequestInterface
+class Mysql implements AdapterInterface, ResetAfterRequestInterface
 {
     // @codingStandardsIgnoreEnd
 
@@ -270,6 +271,18 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
     private $columnConfig;
 
     /**
+     * @var \Zend_Db_Adapter_Pdo_Mysql
+     */
+    private $adapter;
+
+    /**
+     * @var array
+     */
+    private $config = [];
+
+    private $connection;
+
+    /**
      * Constructor
      *
      * @param StringUtils $string
@@ -311,10 +324,131 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
             1146 => TableNotFoundException::class,
         ];
         try {
-            parent::__construct($config);
+            $this->adapter = new AdapterPdoMysql($config);
+            $this->config = $this->adapter->getConfig();
+            $this->connection = $this->adapter->getConnection();
         } catch (Zend_Db_Adapter_Exception $e) {
             throw new \InvalidArgumentException($e->getMessage(), $e->getCode(), $e);
         }
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function insert($table, array $bind) 
+    {
+        return $this->adapter->insert($table, $bind);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function update($table, array $bind, $where = '') 
+    {
+        return $this->adapter->update($table, $bind, $where);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function delete($table, $where = '') 
+    {
+        return $this->adapter->delete($table, $where);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchAll($sql, $bind = [], $fetchMode = null) 
+    {
+        return $this->adapter->fetchAll($sql, $bind, $fetchMode);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchRow($sql, $bind = [], $fetchMode = null) 
+    {
+        return $this->adapter->fetchRow($sql, $bind, $fetchMode);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchAssoc($sql, $bind = []) 
+    {
+        return $this->adapter->fetchAssoc($sql, $bind);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchCol($sql, $bind = []) 
+    {
+        return $this->adapter->fetchCol($sql, $bind);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchPairs($sql, $bind = []) 
+    {
+        return $this->adapter->fetchPairs($sql, $bind);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function fetchOne($sql, $bind = []) 
+    {
+        return $this->adapter->fetchOne($sql, $bind);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function quote($value, $type = null) 
+    {
+        return $this->adapter->quote($value, $type);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function quoteIdentifier($ident, $auto = false) 
+    {
+        return $this->adapter->quoteIdentifier($ident, $auto);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function quoteColumnAs($ident, $alias, $auto = false) 
+    {
+        return $this->adapter->quoteColumnAs($ident, $alias, $auto);
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function quoteTableAs($ident, $alias = null, $auto = false) 
+    {
+        return $this->adapter->quoteTableAs($ident, $alias, $auto);
+    }
+
+    public function getProfiler() 
+    {
+        return $this->adapter->getProfiler();
+    }
+
+    public function getAdapter() 
+    {
+        return $this->adapter;
+    }
+
+    public function lastInsertId($tableName = null, $primaryKey = null) 
+    {
+        return $this->adapter->lastInsertId($tableName, $primaryKey);
     }
 
     /**
@@ -351,7 +485,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
             $this->logger->startTimer();
             try {
                 $this->performQuery(function () {
-                    parent::beginTransaction();
+                    $this->adapter->beginTransaction();
                 });
             } finally {
                 $this->logger->logStats(LoggerInterface::TYPE_TRANSACTION, 'BEGIN');
@@ -371,7 +505,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
     {
         if ($this->_transactionLevel === 1 && !$this->_isRolledBack) {
             $this->logger->startTimer();
-            parent::commit();
+            $this->adapter->commit();
             $this->logger->logStats(LoggerInterface::TYPE_TRANSACTION, 'COMMIT');
         } elseif ($this->_transactionLevel === 0) {
             // phpcs:ignore Magento2.Exceptions.DirectThrow.FoundDirectThrow
@@ -394,7 +528,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
     {
         if ($this->_transactionLevel === 1) {
             $this->logger->startTimer();
-            parent::rollBack();
+            $this->adapter->rollBack();
             $this->_isRolledBack = false;
             $this->logger->logStats(LoggerInterface::TYPE_TRANSACTION, 'ROLLBACK');
         } elseif ($this->_transactionLevel === 0) {
@@ -450,89 +584,15 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
             // Note: we hide parent's connection into parentConnections so that the destructor isn't called on it.
             // Because if destructor is called, it causes parent's connection to die
             // We store in array, if parent is also hiding its parent's connection
-            $this->parentConnections[] = $this->_connection;
-            $this->_connection = null;
+            $this->parentConnections[] = $this->connection;
+            $this->connection = null;
             $this->pid = getmypid();
 
             // Reset config host to avoid issue with multiple connections
-            if (!empty($this->_config['port']) && strpos($this->_config['host'], ':') === false) {
-                $this->_config['host'] = implode(':', [$this->_config['host'], $this->_config['port']]);
-                unset($this->_config['port']);
+            if (!empty($this->config['port']) && strpos($this->config['host'], ':') === false) {
+                $this->config['host'] = implode(':', [$this->config['host'], $this->config['port']]);
+                unset($this->config['port']);
             }
-        }
-    }
-
-    /**
-     * Creates a PDO object and connects to the database.
-     *
-     * @SuppressWarnings(PHPMD.CyclomaticComplexity)
-     * @SuppressWarnings(PHPMD.NPathComplexity)
-     *
-     * @return void
-     * @throws Zend_Db_Adapter_Exception
-     * @throws Zend_Db_Statement_Exception
-     */
-    protected function _connect()
-    {
-        $this->avoidReusingParentProcessConnection();
-        if ($this->_connection) {
-            return;
-        }
-
-        if (!extension_loaded('pdo_mysql')) {
-            throw new Zend_Db_Adapter_Exception('pdo_mysql extension is not installed');
-        }
-
-        if (!isset($this->_config['host'])) {
-            throw new Zend_Db_Adapter_Exception('No host configured to connect');
-        }
-
-        if (isset($this->_config['port'])) {
-            throw new Zend_Db_Adapter_Exception('Port must be configured within host parameter (like localhost:3306');
-        }
-
-        unset($this->_config['port']);
-
-        if (strpos($this->_config['host'], '/') !== false) {
-            $this->_config['unix_socket'] = $this->_config['host'];
-            unset($this->_config['host']);
-        } elseif (strpos($this->_config['host'], ':') !== false) {
-            list($this->_config['host'], $this->_config['port']) = explode(':', $this->_config['host']);
-        }
-
-        if (!isset($this->_config['driver_options'][\PDO::MYSQL_ATTR_MULTI_STATEMENTS])) {
-            $this->_config['driver_options'][\PDO::MYSQL_ATTR_MULTI_STATEMENTS] = false;
-        }
-
-        if (!isset($this->_config['driver_options'][\PDO::ATTR_STRINGIFY_FETCHES])) {
-            $this->_config['driver_options'][\PDO::ATTR_STRINGIFY_FETCHES] = true;
-        }
-
-        $this->logger->startTimer();
-        parent::_connect();
-        $this->logger->logStats(LoggerInterface::TYPE_CONNECT, '');
-
-        /** @link http://bugs.mysql.com/bug.php?id=18551 */
-        $this->_connection->query("SET SQL_MODE=''");
-
-        // As we use default value CURRENT_TIMESTAMP for TIMESTAMP type columns we need to set GMT timezone
-        $this->_connection->query("SET time_zone = '+00:00'");
-
-        if (isset($this->_config['initStatements'])) {
-            $statements = $this->_splitMultiQuery($this->_config['initStatements']);
-            foreach ($statements as $statement) {
-                $this->_query($statement);
-            }
-        }
-
-        if (!$this->_connectionFlagsSet) {
-            $this->_connection->setAttribute(\PDO::ATTR_EMULATE_PREPARES, true);
-            if (isset($this->_config['use_buffered_query']) && $this->_config['use_buffered_query'] === false) {
-                $this->_connection->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, false);
-            } else {
-                $this->_connection->setAttribute(\PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
-            }
-            $this->_connectionFlagsSet = true;
         }
     }
 
@@ -544,12 +604,31 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
     private function createConnection()
     {
         $connection = new \PDO(
-            $this->_dsn(),
-            $this->_config['username'],
-            $this->_config['password'],
-            $this->_config['driver_options']
+            $this->buildDsn(),
+            $this->config['username'],
+            $this->config['password'],
+            $this->config['driver_options']
         );
         return $connection;
+    }
+
+    /**
+     * Build DSN string from configuration
+     *
+     * @return string
+     */
+    private function buildDsn()
+    {
+        $dsn = 'mysql:';
+        $dsnParams = ['host', 'port', 'dbname', 'charset'];
+        
+        foreach ($dsnParams as $param) {
+            if (!empty($this->config[$param])) {
+                $dsn .= $param . '=' . $this->config[$param] . ';';
+            }
+        }
+        
+        return rtrim($dsn, ';');
     }
 
     /**
@@ -638,7 +717,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
             $this->_checkDdlTransaction($sql);
             $this->_prepareQuery($sql, $bind);
             $this->logger->startTimer();
-            $result = $this->performQuery(fn () => parent::query($sql, $bind));
+            $result = $this->performQuery(fn () => $this->adapter->query($sql, $bind));
         } finally {
             $this->logger->logStats(LoggerInterface::TYPE_QUERY, $sql, $bind, $result);
         }
@@ -688,7 +767,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
                     $retry = true;
                     $triesCount++;
                     $this->closeConnection();
-                    $this->_connect();
+                    $this->adapter->getConnection();
                 }
 
                 if (!$retry) {
@@ -1637,7 +1716,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
             $value = $value->format('Y-m-d H:i:s');
         }
 
-        return parent::quoteInto($text, $value, $type, $count);
+        return $this->adapter->quoteInto($text, $value, $type, $count);
     }
 
     /**
@@ -1818,7 +1897,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
         $cacheKey = $this->_getTableName($tableName, $schemaName);
         $ddl = $this->loadDdlCache($cacheKey, self::DDL_DESCRIBE);
         if ($ddl === false) {
-            $ddl = $this->prepareColumnData(parent::describeTable($tableName, $schemaName));
+            $ddl = $this->prepareColumnData($this->adapter->describeTable($tableName, $schemaName));
             $this->saveDdlCache($cacheKey, self::DDL_DESCRIBE, $ddl);
         }
 
@@ -2289,8 +2368,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
         if ($schemaName !== null) {
             $table->setSchema($schemaName);
         }
-        if (isset($this->_config['engine'])) {
-            $table->setOption('type', $this->_config['engine']);
+        if (isset($this->config['engine'])) {
+            $table->setOption('type', $this->config['engine']);
         }
 
         return $table;
@@ -4294,11 +4373,11 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface, Rese
         /**
          * _connect() function does not allow port parameter, so put the port back with the host
          */
-        if (!empty($this->_config['port'])) {
-            $this->_config['host'] = implode(':', [$this->_config['host'], $this->_config['port']]);
-            unset($this->_config['port']);
+        if (!empty($this->config['port'])) {
+            $this->config['host'] = implode(':', [$this->config['host'], $this->config['port']]);
+            unset($this->config['port']);
         }
-        parent::closeConnection();
+        $this->adapter->closeConnection();
     }
 
     /**

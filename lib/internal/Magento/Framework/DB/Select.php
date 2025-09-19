@@ -31,6 +31,7 @@ use Magento\Framework\DB\Sql\Expression;
  * @method \Magento\Framework\DB\Select columns($cols = '*', $correlationName = null)
  * @since 100.0.2
  */
+// TODO: extend \Zend_Db_Select directly after removing support of Zend Framework 1
 class Select extends \Zend_Db_Select
 {
     /**
@@ -72,7 +73,7 @@ class Select extends \Zend_Db_Select
         }
 
         $this->selectRenderer = $selectRenderer;
-        parent::__construct($adapter);
+        parent::__construct($adapter->getAdapter());
     }
 
     /**
